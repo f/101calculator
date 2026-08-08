@@ -35,11 +35,15 @@ import { createSyntheticRackCanvas } from './syntheticRack';
 type ScanPhase = 'waiting' | 'loading' | 'reading' | 'ready' | 'error';
 
 type PhotoSource = {
+  sourceCanvas: HTMLCanvasElement;
   canvas: HTMLCanvasElement;
   url: string;
+  stageAspect: number;
 };
 
-async function loadPhoto(file: File): Promise<PhotoSource> {
+type LoadedPhoto = Pick<PhotoSource, 'canvas' | 'url'>;
+
+async function loadPhoto(file: File): Promise<LoadedPhoto> {
   const isHeic = /\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
   let imageBlob: Blob = file;
   if (isHeic) {
@@ -470,7 +474,7 @@ function InfoSheet({ onClose }: { onClose: () => void }) {
           <button className="icon-button" onClick={onClose} aria-label="Kapat"><X size={20} /></button>
         </div>
         <ol className="steps-list">
-          <li><span>01</span><div><strong>Istakayı hizala</strong><p>Taşları iki sıra halinde kesikli çerçevenin içinde tut.</p></div></li>
+          <li><span>01</span><div><strong>Telefonu yatay tut</strong><p>Istakanın tamamını iki sıra halinde kesikli çerçevenin içinde tut.</p></div></li>
           <li><span>02</span><div><strong>Perlere boşluk bırak</strong><p>Uygulama per sınırlarını taşların arasındaki boşluktan anlar.</p></div></li>
           <li><span>03</span><div><strong>Sarı kutuyu düzelt</strong><p>Belirsiz okunan bir taşa dokunup sayı ve rengini seç.</p></div></li>
         </ol>
@@ -498,6 +502,8 @@ export default function App() {
   const [photoError, setPhotoError] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<HTMLElement>(null);
+  const photoRef = useRef<PhotoSource | null>(null);
+  const photoScanId = useRef(0);
   const hasLoadedModel = useRef(false);
   const hasRunSyntheticTest = useRef(false);
 
@@ -505,9 +511,59 @@ export default function App() {
     void disposeRecognitionWorker();
   }, []);
 
-  useEffect(() => () => {
-    if (photo) URL.revokeObjectURL(photo.url);
+  useEffect(() => {
+    photoRef.current = photo;
   }, [photo]);
+
+  useEffect(() => () => {
+    if (photoRef.current) URL.revokeObjectURL(photoRef.current.url);
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!photo || !stage) return;
+    let timeout: number | undefined;
+    let disposed = false;
+
+    const refitPhoto = () => {
+      if (timeout) window.clearTimeout(timeout);
+      timeout = window.setTimeout(async () => {
+        const current = photoRef.current;
+        if (!current || current.url !== photo.url || !stage.clientHeight) return;
+        const nextAspect = stage.clientWidth / stage.clientHeight;
+        if (Math.abs(nextAspect - current.stageAspect) < 0.03) return;
+
+        const requestId = photoScanId.current + 1;
+        photoScanId.current = requestId;
+        const canvas = fitPhotoToStage(current.sourceCanvas, nextAspect);
+        setTiles([]);
+        setScanPhase('reading');
+        try {
+          const recognition = await recognizeRack(canvas);
+          if (disposed || requestId !== photoScanId.current) return;
+          const refitted = { ...current, canvas, stageAspect: nextAspect };
+          photoRef.current = refitted;
+          setPhoto(refitted);
+          setTiles(recognition.tiles);
+          setQuality(recognition.quality);
+          setScanPhase('ready');
+        } catch (error) {
+          if (disposed || requestId !== photoScanId.current) return;
+          console.error(error);
+          setPhotoError('Fotoğraf yeni ekran yönünde okunamadı. Yeniden dene.');
+          setScanPhase('error');
+        }
+      }, 220);
+    };
+
+    const observer = new ResizeObserver(refitPhoto);
+    observer.observe(stage);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      if (timeout) window.clearTimeout(timeout);
+    };
+  }, [photo?.url]);
 
   useEffect(() => {
     if (!syntheticOcrTest || hasRunSyntheticTest.current) return;
@@ -593,6 +649,8 @@ export default function App() {
   const choosePhoto = () => photoInputRef.current?.click();
 
   const readPhoto = async (file: File) => {
+    const requestId = photoScanId.current + 1;
+    photoScanId.current = requestId;
     setPhotoError(null);
     setScanPhase('loading');
     setTiles([]);
@@ -600,18 +658,31 @@ export default function App() {
     camera.stop();
     try {
       const loaded = await loadPhoto(file);
+      if (requestId !== photoScanId.current) {
+        URL.revokeObjectURL(loaded.url);
+        return;
+      }
       if (photo) URL.revokeObjectURL(photo.url);
       const stageWidth = stageRef.current?.clientWidth ?? 480;
       const stageHeight = stageRef.current?.clientHeight ?? 900;
-      const fitted = { ...loaded, canvas: fitPhotoToStage(loaded.canvas, stageWidth / stageHeight) };
+      const stageAspect = stageWidth / stageHeight;
+      const fitted: PhotoSource = {
+        sourceCanvas: loaded.canvas,
+        canvas: fitPhotoToStage(loaded.canvas, stageAspect),
+        url: loaded.url,
+        stageAspect,
+      };
+      photoRef.current = fitted;
       setPhoto(fitted);
       const recognition = await recognizeRack(fitted.canvas, (progress) => {
         if (progress > 0) setScanPhase('reading');
       });
+      if (requestId !== photoScanId.current) return;
       setTiles(recognition.tiles);
       setQuality(recognition.quality);
       setScanPhase('ready');
     } catch (error) {
+      if (requestId !== photoScanId.current) return;
       console.error(error);
       setPhotoError('Fotoğraf okunamadı. HEIC, JPEG veya PNG ile yeniden dene.');
       setScanPhase('error');
@@ -619,7 +690,9 @@ export default function App() {
   };
 
   const exitPhoto = () => {
+    photoScanId.current += 1;
     if (photo) URL.revokeObjectURL(photo.url);
+    photoRef.current = null;
     setPhoto(null);
     setPhotoError(null);
     setTiles([]);
@@ -728,7 +801,7 @@ export default function App() {
         </section>
 
         <div className="desktop-note">
-          <div><RefreshCw size={16} /><span>En iyi sonuç için telefonu dik tut</span></div>
+          <div><RefreshCw size={16} /><span>Istakayı bütünüyle görmek için telefonu yatay tut</span></div>
         </div>
 
         {editorOpen && (

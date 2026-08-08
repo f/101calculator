@@ -980,9 +980,6 @@ export async function recognizeRack(
   if (!candidates.length) return { tiles: [], quality };
 
   const cells = buildOcrCells(source, candidates);
-  if (import.meta.env.DEV) {
-    (window as typeof window & { __okeyOcrCells?: HTMLCanvasElement[] }).__okeyOcrCells = cells;
-  }
   const recognizedByCell = new Map<number, { value: number; confidence: number }>();
   if (cells.some(Boolean)) {
     const worker = await getWorker(onProgress);

@@ -1118,7 +1118,293 @@ button:focus-visible {
   .sheet-backdrop { padding: 0; }
 }
 
-@media (max-height: 740px) {
+@media (orientation: landscape) and (max-height: 620px) {
+  .page-shell {
+    padding: 0;
+  }
+
+  .app-frame {
+    width: 100%;
+    height: 100dvh;
+  }
+
+  .camera-stage {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .desktop-note {
+    display: none;
+  }
+
+  .top-hud {
+    padding:
+      calc(8px + env(safe-area-inset-top))
+      calc(12px + env(safe-area-inset-right))
+      7px
+      calc(12px + env(safe-area-inset-left));
+  }
+
+  .wordmark {
+    font-size: 0.75rem;
+  }
+
+  .hud-actions {
+    gap: 6px;
+  }
+
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .demo-exit {
+    min-height: 44px;
+    padding-inline: 10px;
+    font-size: 0.64rem;
+  }
+
+  .permission-wrap {
+    padding:
+      calc(8px + env(safe-area-inset-top))
+      calc(12px + env(safe-area-inset-right))
+      calc(8px + env(safe-area-inset-bottom))
+      calc(12px + env(safe-area-inset-left));
+  }
+
+  .permission-card {
+    max-width: 380px;
+  }
+
+  .permission-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 9px;
+    border-radius: 15px;
+  }
+
+  .permission-orbit {
+    inset: -5px;
+    border-radius: 19px;
+  }
+
+  .permission-card .eyebrow {
+    margin-bottom: 4px;
+    font-size: 0.52rem;
+  }
+
+  .permission-card h1 {
+    font-size: 1.2rem;
+  }
+
+  .permission-copy {
+    margin: 7px 0 9px;
+    font-size: 0.68rem;
+    line-height: 1.35;
+  }
+
+  .permission-card .primary-button {
+    min-height: 44px;
+    max-width: 300px;
+    font-size: 0.7rem;
+  }
+
+  .permission-card .text-button {
+    min-height: 44px;
+    margin-top: 0;
+    padding: 5px;
+    font-size: 0.66rem;
+  }
+
+  .permission-card .privacy-note {
+    margin-top: 5px;
+  }
+
+  .rack-guide {
+    top: 21%;
+    right: calc(2.5% + env(safe-area-inset-right));
+    left: calc(2.5% + env(safe-area-inset-left));
+    width: auto;
+    height: 45%;
+  }
+
+  .corner {
+    width: 17px;
+    height: 17px;
+  }
+
+  .guide-label {
+    top: -23px;
+    left: 50%;
+    gap: 5px;
+    transform: translateX(-50%);
+    font-size: 0.52rem;
+    white-space: nowrap;
+  }
+
+  .camera-hint {
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .camera-hint span {
+    padding: 4px 8px;
+    font-size: 0.57rem;
+  }
+
+  .scan-beam {
+    top: 21%;
+    left: calc(4% + env(safe-area-inset-left));
+    width: calc(92% - env(safe-area-inset-left) - env(safe-area-inset-right));
+    animation-name: scan-landscape;
+  }
+
+  .score-dock {
+    min-height: 0;
+    display: grid;
+    grid-template-areas:
+      'status chips actions'
+      'score chips actions';
+    grid-template-columns: minmax(225px, 0.9fr) minmax(95px, 1.1fr) auto;
+    grid-template-rows: auto 1fr;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+    padding:
+      6px
+      calc(10px + env(safe-area-inset-right))
+      calc(7px + env(safe-area-inset-bottom))
+      calc(10px + env(safe-area-inset-left));
+    border-radius: 14px 14px 0 0;
+  }
+
+  .dock-handle,
+  .score-progress {
+    display: none;
+  }
+
+  .scan-status {
+    grid-area: status;
+    align-self: end;
+    gap: 5px;
+    font-size: 0.5rem;
+    line-height: 1;
+  }
+
+  .status-dot {
+    width: 5px;
+    height: 5px;
+  }
+
+  .score-row {
+    grid-area: score;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+  }
+
+  .score-label {
+    font-size: 0.39rem;
+  }
+
+  .score-number strong {
+    font-size: 1.55rem;
+  }
+
+  .score-number span {
+    font-size: 0.58rem;
+  }
+
+  .result-badge {
+    min-width: 112px;
+    gap: 6px;
+    padding: 5px 7px;
+    border-radius: 8px;
+  }
+
+  .result-badge > svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .result-badge strong {
+    font-size: 0.57rem;
+  }
+
+  .result-badge span {
+    margin-top: 1px;
+    font-size: 0.47rem;
+  }
+
+  .meld-chips {
+    grid-area: chips;
+    min-height: 0;
+    height: 44px;
+    align-items: stretch;
+    gap: 5px;
+    margin: 0;
+    padding: 0;
+  }
+
+  .meld-chips > button {
+    min-width: 62px;
+    gap: 6px;
+    padding: 5px 7px;
+  }
+
+  .meld-chips > p {
+    margin: auto 0;
+    white-space: nowrap;
+  }
+
+  .dock-actions {
+    grid-area: actions;
+    min-width: 190px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px;
+    margin: 0;
+  }
+
+  .secondary-button,
+  .scan-button {
+    min-height: 44px;
+    padding: 0 9px;
+    font-size: 0.61rem;
+  }
+
+  .dock-actions svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .sheet-backdrop {
+    align-items: center;
+    padding:
+      env(safe-area-inset-top)
+      env(safe-area-inset-right)
+      env(safe-area-inset-bottom)
+      env(safe-area-inset-left);
+  }
+
+  .editor-sheet,
+  .info-sheet {
+    width: min(92%, 720px);
+    max-height: 92dvh;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 18px;
+  }
+}
+
+@keyframes scan-landscape {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 0.8; }
+  82% { opacity: 0.65; }
+  100% { transform: translateY(39vh); opacity: 0; }
+}
+
+@media (orientation: portrait) and (max-height: 740px) {
   .score-dock { min-height: 250px; padding-top: 7px; }
   .score-number strong { font-size: 2.25rem; }
   .meld-chips { min-height: 34px; }
