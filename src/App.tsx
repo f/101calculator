@@ -5,6 +5,7 @@ import {
   Check,
   CircleHelp,
   Focus,
+  ImageUp,
   LockKeyhole,
   Pause,
   Play,
@@ -32,6 +33,55 @@ import { useCamera } from './useCamera';
 import { createSyntheticRackCanvas } from './syntheticRack';
 
 type ScanPhase = 'waiting' | 'loading' | 'reading' | 'ready' | 'error';
+
+type PhotoSource = {
+  canvas: HTMLCanvasElement;
+  url: string;
+};
+
+async function loadPhoto(file: File): Promise<PhotoSource> {
+  const isHeic = /\.(heic|heif)$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
+  let imageBlob: Blob = file;
+  if (isHeic) {
+    const { heicTo } = await import('heic-to');
+    imageBlob = await heicTo({ blob: file, type: 'image/jpeg', quality: 0.94 });
+  }
+
+  const url = URL.createObjectURL(imageBlob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('Fotoğraf açılamadı.'));
+      element.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.min(1280, image.naturalWidth);
+    canvas.height = Math.round(canvas.width * image.naturalHeight / image.naturalWidth);
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) throw new Error('Fotoğraf karesi hazırlanamadı.');
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return { canvas, url };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+function fitPhotoToStage(source: HTMLCanvasElement, stageAspect: number) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 960;
+  canvas.height = Math.round(canvas.width / Math.max(0.42, stageAspect));
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Fotoğraf karesi hizalanamadı.');
+  context.fillStyle = '#080b09';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  const scale = Math.min(canvas.width / source.width, canvas.height / source.height);
+  const width = source.width * scale;
+  const height = source.height * scale;
+  context.drawImage(source, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+  return canvas;
+}
 
 const COLOR_LABELS: Record<TileColor, string> = {
   red: 'Kırmızı',
@@ -72,11 +122,13 @@ function stabilizeTiles(previous: DetectedTile[], current: DetectedTile[]) {
       .sort((a, b) => a.distance - b.distance)[0]?.candidate;
 
     if (!match) return tile;
-    const sameReading = match.number === tile.number && match.color === tile.color;
+    const sameReading = match.number === tile.number
+      && match.color === tile.color
+      && Boolean(match.isJoker) === Boolean(tile.isJoker);
     if (sameReading) {
       return { ...tile, id: match.id, confidence: Math.min(1, tile.confidence * 0.7 + match.confidence * 0.3 + 0.06) };
     }
-    if (tile.number === null && match.number !== null && match.confidence > 0.72) {
+    if (!tile.isJoker && tile.number === null && match.number !== null && match.confidence > 0.72) {
       return { ...tile, id: match.id, number: match.number, color: match.color, confidence: match.confidence * 0.84 };
     }
     return tile;
@@ -95,7 +147,7 @@ function TileScene({ tile }: { tile: DetectedTile }) {
         color: COLOR_HEX[tile.color],
       }}
     >
-      <span>{tile.number}</span>
+      <span>{tile.isJoker ? '★' : tile.number}</span>
       <i />
     </div>
   );
@@ -146,9 +198,14 @@ function CameraOverlay({
             height: `${tile.bounds.height * 100}%`,
             '--tile-ink': COLOR_HEX[tile.color],
           } as React.CSSProperties}
-          aria-label={`${tile.number ?? 'Okunamayan'} ${COLOR_LABELS[tile.color]} taşını düzelt`}
+          aria-label={tile.isJoker
+            ? `Yıldız okey, ${tile.number ?? 'değeri henüz çıkarılamadı'}`
+            : `${tile.number ?? 'Okunamayan'} ${COLOR_LABELS[tile.color]} taşını düzelt`}
         >
-          <span>{tile.number ?? '?'}</span>
+          <span className={tile.isJoker ? 'joker-reading' : ''}>
+            {tile.isJoker && <small>★</small>}
+            {tile.number ?? '?'}
+          </span>
         </button>
       ))}
     </div>
@@ -160,11 +217,13 @@ function PermissionCard({
   error,
   onRetry,
   onDemo,
+  onPhoto,
 }: {
   state: ReturnType<typeof useCamera>['state'];
   error: string | null;
   onRetry: () => void;
   onDemo: () => void;
+  onPhoto: () => void;
 }) {
   const requesting = state === 'requesting';
   return (
@@ -190,6 +249,10 @@ function PermissionCard({
         <button className="text-button" onClick={onDemo}>
           <Sparkles size={16} />
           Örnek elle dene
+        </button>
+        <button className="text-button photo-button" onClick={onPhoto}>
+          <ImageUp size={16} />
+          Fotoğraftan oku
         </button>
         <div className="privacy-note">
           <LockKeyhole size={14} />
@@ -217,7 +280,9 @@ function ScoreDock({
 }) {
   const result = useMemo(() => calculateScan(tiles), [tiles]);
   const invalidCount = result.melds.filter((meld) => !meld.isValid).length;
-  const trusted = tiles.length >= 3 && invalidCount === 0 && tiles.every((tile) => tile.number !== null && tile.confidence >= 0.56);
+  const countedTiles = result.melds.filter((meld) => meld.isValid).flatMap((meld) => meld.tiles);
+  const trusted = countedTiles.length >= 3
+    && countedTiles.every((tile) => tile.number !== null && tile.confidence >= 0.56);
   const confirmedPass = result.passes101 && trusted;
   const possiblePass = result.passes101 && !trusted;
   const progress = Math.min(100, (result.total / 101) * 100);
@@ -263,7 +328,7 @@ function ScoreDock({
             <span>
               {confirmedPass
                 ? result.total === 101 ? 'Tam sınırda' : `+${result.total - 101} fazlası var`
-                : invalidCount > 0 ? `${invalidCount} per geçersiz` : `${result.melds.length} per bulundu`}
+                : invalidCount > 0 ? `${invalidCount} grup sayılmadı` : `${result.melds.length} per bulundu`}
             </span>
           </div>
         </div>
@@ -342,7 +407,7 @@ function TileEditor({
                     style={{ '--tile-ink': COLOR_HEX[tile.color] } as React.CSSProperties}
                     onClick={() => onSelect(tile.id)}
                   >
-                    {tile.number ?? '?'}
+                    {tile.isJoker ? `★ ${tile.number ?? '?'}` : tile.number ?? '?'}
                   </button>
                 ))}
               </div>
@@ -421,7 +486,8 @@ export default function App() {
   const syntheticOcrTest = query.get('ocrtest') === '1';
   const initialDemo = query.get('demo') === '1' || syntheticOcrTest;
   const [isDemo, setIsDemo] = useState(initialDemo);
-  const camera = useCamera(isDemo);
+  const [photo, setPhoto] = useState<PhotoSource | null>(null);
+  const camera = useCamera(isDemo || Boolean(photo));
   const [tiles, setTiles] = useState<DetectedTile[]>(initialDemo && !syntheticOcrTest ? createDemoTiles() : []);
   const [scanPhase, setScanPhase] = useState<ScanPhase>(initialDemo ? 'ready' : 'waiting');
   const [frozen, setFrozen] = useState(initialDemo);
@@ -429,12 +495,19 @@ export default function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState<string | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const stageRef = useRef<HTMLElement>(null);
   const hasLoadedModel = useRef(false);
   const hasRunSyntheticTest = useRef(false);
 
   useEffect(() => () => {
     void disposeRecognitionWorker();
   }, []);
+
+  useEffect(() => () => {
+    if (photo) URL.revokeObjectURL(photo.url);
+  }, [photo]);
 
   useEffect(() => {
     if (!syntheticOcrTest || hasRunSyntheticTest.current) return;
@@ -517,6 +590,44 @@ export default function App() {
     setQuality(null);
   };
 
+  const choosePhoto = () => photoInputRef.current?.click();
+
+  const readPhoto = async (file: File) => {
+    setPhotoError(null);
+    setScanPhase('loading');
+    setTiles([]);
+    setFrozen(true);
+    camera.stop();
+    try {
+      const loaded = await loadPhoto(file);
+      if (photo) URL.revokeObjectURL(photo.url);
+      const stageWidth = stageRef.current?.clientWidth ?? 480;
+      const stageHeight = stageRef.current?.clientHeight ?? 900;
+      const fitted = { ...loaded, canvas: fitPhotoToStage(loaded.canvas, stageWidth / stageHeight) };
+      setPhoto(fitted);
+      const recognition = await recognizeRack(fitted.canvas, (progress) => {
+        if (progress > 0) setScanPhase('reading');
+      });
+      setTiles(recognition.tiles);
+      setQuality(recognition.quality);
+      setScanPhase('ready');
+    } catch (error) {
+      console.error(error);
+      setPhotoError('Fotoğraf okunamadı. HEIC, JPEG veya PNG ile yeniden dene.');
+      setScanPhase('error');
+    }
+  };
+
+  const exitPhoto = () => {
+    if (photo) URL.revokeObjectURL(photo.url);
+    setPhoto(null);
+    setPhotoError(null);
+    setTiles([]);
+    setQuality(null);
+    setFrozen(false);
+    setScanPhase('waiting');
+  };
+
   const exitDemo = () => {
     setIsDemo(false);
     setTiles([]);
@@ -524,17 +635,30 @@ export default function App() {
     setScanPhase('waiting');
   };
 
-  const showCamera = isDemo || camera.state === 'live';
+  const showCamera = isDemo || Boolean(photo) || camera.state === 'live';
   const scanHint = quality?.message
     ?? (tiles.length ? `${tiles.length} taş · ${calculateScan(tiles).melds.length} per` : 'Istakayı kesikli alana yaklaştır');
+  const displayResult = calculateScan(tiles);
 
   return (
     <main className="page-shell">
       <div className="app-frame">
-        <section className={`camera-stage ${isDemo ? 'is-demo' : ''}`}>
-          {!isDemo && (
+        <input
+          ref={photoInputRef}
+          className="photo-input"
+          type="file"
+          accept="image/*,.heic,.heif"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void readPhoto(file);
+            event.currentTarget.value = '';
+          }}
+        />
+        <section ref={stageRef} className={`camera-stage ${isDemo ? 'is-demo' : ''}`}>
+          {!isDemo && !photo && (
             <video ref={camera.videoRef} autoPlay muted playsInline aria-label="Canlı arka kamera görüntüsü" />
           )}
+          {photo && <img className="photo-frame" src={photo.url} alt="Taranan 101 Okey ıstakası" />}
           {isDemo && (
             <div className="demo-scene" aria-label="Örnek 101 Okey ıstakası">
               <div className="table-mark table-mark-one">101</div>
@@ -551,7 +675,16 @@ export default function App() {
               <span>YÜZ</span><strong>BİR</strong>
             </div>
             <div className="hud-actions">
-              {isDemo && <button className="demo-exit" onClick={exitDemo}><Camera size={14} /> Kamera</button>}
+              {(isDemo || photo) && (
+                <button className="demo-exit" onClick={photo ? exitPhoto : exitDemo}>
+                  <Camera size={14} /> Kamera
+                </button>
+              )}
+              {!isDemo && (
+                <button className="icon-button glass" onClick={choosePhoto} aria-label="Fotoğraftan oku">
+                  <ImageUp size={18} />
+                </button>
+              )}
               <button className="icon-button glass" onClick={() => setInfoOpen(true)} aria-label="Nasıl kullanılır">
                 <CircleHelp size={19} />
               </button>
@@ -567,7 +700,7 @@ export default function App() {
                 <div className="row-guide first" /><div className="row-guide second" />
               </div>
               <div className="camera-hint"><span>{scanHint}</span></div>
-              <CameraOverlay tiles={tiles} melds={calculateScan(tiles).melds} onEdit={openEditor} />
+              <CameraOverlay tiles={displayResult.tiles} melds={displayResult.melds} onEdit={openEditor} />
               {!frozen && <div className="scan-beam" />}
             </>
           )}
@@ -575,9 +708,10 @@ export default function App() {
           {!showCamera && (
             <PermissionCard
               state={camera.state}
-              error={camera.error}
+              error={photoError ?? camera.error}
               onRetry={() => void camera.start()}
               onDemo={enterDemo}
+              onPhoto={choosePhoto}
             />
           )}
 

@@ -16,6 +16,8 @@ export type DetectedTile = {
   confidence: number;
   bounds: Rect;
   groupIndex: number;
+  isJoker?: boolean;
+  inferredJoker?: boolean;
   edited?: boolean;
 };
 
@@ -42,8 +44,46 @@ export type ScanResult = {
 const isConsecutive = (numbers: number[]) =>
   numbers.every((number, index) => index === 0 || number === numbers[index - 1] + 1);
 
-export function evaluateMeld(tiles: DetectedTile[]): Omit<MeldResult, 'groupIndex'> {
+function resolveJokersInMeld(tiles: DetectedTile[]) {
   const sortedTiles = [...tiles].sort((a, b) => a.bounds.x - b.bounds.x);
+  const jokers = sortedTiles.filter((tile) => tile.isJoker && !tile.edited);
+  if (!jokers.length) return sortedTiles;
+
+  const regularTiles = sortedTiles.filter((tile) => !tile.isJoker || tile.edited);
+  const knownRegulars = regularTiles.filter(
+    (tile): tile is DetectedTile & { number: number } => tile.number !== null,
+  );
+  if (!knownRegulars.length) return sortedTiles;
+
+  const regularNumbers = knownRegulars.map((tile) => tile.number);
+  const regularColors = knownRegulars.map((tile) => tile.color);
+  const canBeSet = sortedTiles.length <= 4
+    && regularNumbers.every((number) => number === regularNumbers[0])
+    && new Set(regularColors).size === regularColors.length;
+
+  let inferredNumbers: number[] | null = null;
+  if (canBeSet) {
+    inferredNumbers = sortedTiles.map(() => regularNumbers[0]);
+  } else if (new Set(regularColors).size === 1) {
+    const possibleRuns: number[][] = [];
+    for (let start = 1; start <= 14 - sortedTiles.length; start += 1) {
+      const run = sortedTiles.map((_, index) => start + index);
+      const matchesKnownTiles = sortedTiles.every(
+        (tile, index) => tile.isJoker && !tile.edited ? true : tile.number === run[index],
+      );
+      if (matchesKnownTiles) possibleRuns.push(run);
+    }
+    if (possibleRuns.length === 1) inferredNumbers = possibleRuns[0];
+  }
+
+  if (!inferredNumbers) return sortedTiles;
+  return sortedTiles.map((tile, index) => tile.isJoker && !tile.edited
+    ? { ...tile, number: inferredNumbers[index], inferredJoker: true }
+    : tile);
+}
+
+export function evaluateMeld(tiles: DetectedTile[]): Omit<MeldResult, 'groupIndex'> {
+  const sortedTiles = resolveJokersInMeld(tiles);
   const knownNumbers = sortedTiles
     .map((tile) => tile.number)
     .filter((number): number is number => number !== null);
@@ -57,8 +97,9 @@ export function evaluateMeld(tiles: DetectedTile[]): Omit<MeldResult, 'groupInde
   }
 
   const sameNumber = new Set(knownNumbers).size === 1;
-  const colors = sortedTiles.map((tile) => tile.color);
-  const isSet = sameNumber && new Set(colors).size === colors.length && colors.length <= 4;
+  const regularTiles = sortedTiles.filter((tile) => !tile.isJoker || tile.edited);
+  const colors = regularTiles.map((tile) => tile.color);
+  const isSet = sameNumber && new Set(colors).size === colors.length && sortedTiles.length <= 4;
 
   const sameColor = new Set(colors).size === 1;
   const uniqueNumbers = [...new Set(knownNumbers)].sort((a, b) => a - b);
@@ -75,10 +116,10 @@ export function evaluateMeld(tiles: DetectedTile[]): Omit<MeldResult, 'groupInde
 
 export function calculateScan(tiles: DetectedTile[]): ScanResult {
   const groupIndices = [...new Set(tiles.map((tile) => tile.groupIndex))].sort((a, b) => a - b);
-  const melds = groupIndices.map((groupIndex) => ({
-    groupIndex,
-    ...evaluateMeld(tiles.filter((tile) => tile.groupIndex === groupIndex)),
-  }));
+  const melds = groupIndices.map((groupIndex) => {
+    const result = evaluateMeld(tiles.filter((tile) => tile.groupIndex === groupIndex));
+    return { groupIndex, ...result };
+  });
   // Invalid or incomplete tiles stay visible for correction, but they cannot
   // make the player appear to have reached the opening threshold.
   const total = melds.reduce(
@@ -90,7 +131,7 @@ export function calculateScan(tiles: DetectedTile[]): ScanResult {
     : 0;
 
   return {
-    tiles,
+    tiles: melds.flatMap((meld) => meld.tiles),
     melds,
     total,
     remaining: Math.max(0, 101 - total),
@@ -128,12 +169,23 @@ export function assignGroupsBySpacing(tiles: DetectedTile[]): DetectedTile[] {
     .sort((a, b) => a.centerY - b.centerY)
     .forEach((row, rowIndex) => {
       const sortedRow = row.tiles.sort((a, b) => a.bounds.x - b.bounds.x);
+      const rowGaps = sortedRow.slice(1).map((tile, index) => {
+        const previous = sortedRow[index];
+        return Math.max(0, tile.bounds.x - (previous.bounds.x + previous.bounds.width));
+      });
+      const compactGaps = [...rowGaps]
+        .sort((a, b) => a - b)
+        .slice(0, Math.max(1, Math.ceil(rowGaps.length * 0.55)));
+      const typicalGap = compactGaps.length
+        ? compactGaps[Math.floor(compactGaps.length / 2)]
+        : 0;
+      const groupGapThreshold = Math.max(medianWidth * 0.2, typicalGap * 2 + medianWidth * 0.05);
       if (rowIndex > 0) groupIndex += 1;
       sortedRow.forEach((tile, index) => {
         if (index > 0) {
           const previous = sortedRow[index - 1];
           const gap = tile.bounds.x - (previous.bounds.x + previous.bounds.width);
-          if (gap > medianWidth * 0.42) groupIndex += 1;
+          if (gap > groupGapThreshold) groupIndex += 1;
         }
         grouped.push({ ...tile, groupIndex });
       });

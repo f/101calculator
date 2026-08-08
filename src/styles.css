@@ -76,6 +76,7 @@ button:focus-visible {
 }
 
 .camera-stage > video,
+.camera-stage > .photo-frame,
 .demo-scene {
   position: absolute;
   inset: 0;
@@ -86,6 +87,19 @@ button:focus-visible {
 .camera-stage > video {
   object-fit: cover;
   background: #090d0b;
+}
+
+.camera-stage > .photo-frame {
+  object-fit: contain;
+  background: #080b09;
+}
+
+.photo-input {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .demo-scene {
@@ -431,6 +445,20 @@ button:focus-visible {
   background: var(--amber);
 }
 
+.tile-target span.joker-reading {
+  min-width: 28px;
+  display: flex;
+  gap: 2px;
+  padding-inline: 4px;
+  color: var(--acid-ink);
+  background: var(--acid);
+}
+
+.joker-reading small {
+  font-size: 0.58rem;
+  line-height: 1;
+}
+
 .scan-beam {
   position: absolute;
   z-index: 6;
@@ -560,6 +588,10 @@ button:focus-visible {
   background: transparent;
   font-size: 0.77rem;
   font-weight: 730;
+}
+
+.photo-button {
+  margin-top: 0;
 }
 
 .privacy-note {

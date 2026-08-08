@@ -18,6 +18,16 @@ const makeTiles = (numbers: number[], colors: TileColor[]): DetectedTile[] =>
     bounds: { x: index * 0.08, y: 0, width: 0.06, height: 0.3 },
   }));
 
+const makeJoker = (index: number): DetectedTile => ({
+  id: `joker-${index}`,
+  number: null,
+  color: 'black',
+  confidence: 0.9,
+  groupIndex: 0,
+  isJoker: true,
+  bounds: { x: index * 0.08, y: 0, width: 0.06, height: 0.3 },
+});
+
 describe('evaluateMeld', () => {
   it('recognizes a same-color run', () => {
     const result = evaluateMeld(makeTiles([10, 11, 12], ['blue']));
@@ -37,6 +47,27 @@ describe('evaluateMeld', () => {
   it('rejects duplicate colors in a set', () => {
     const result = evaluateMeld(makeTiles([7, 7, 7], ['red', 'red', 'black']));
     expect(result).toMatchObject({ kind: 'unknown', isValid: false });
+  });
+
+  it('infers a joker from matching set numbers', () => {
+    const tiles = makeTiles([4, 4], ['red', 'blue']);
+    tiles.push(makeJoker(2));
+    const result = evaluateMeld(tiles);
+    expect(result).toMatchObject({ sum: 12, kind: 'set', isValid: true });
+    expect(result.tiles[2]).toMatchObject({ number: 4, isJoker: true, inferredJoker: true });
+  });
+
+  it('infers a joker from the missing place in a run', () => {
+    const tiles = makeTiles([1, 2], ['red']);
+    tiles.push(makeJoker(2));
+    tiles.push(...makeTiles([4, 5], ['red']).map((tile, index) => ({
+      ...tile,
+      id: `tail-${tile.id}`,
+      bounds: { ...tile.bounds, x: (index + 3) * 0.08 },
+    })));
+    const result = evaluateMeld(tiles);
+    expect(result).toMatchObject({ sum: 15, kind: 'run', isValid: true });
+    expect(result.tiles[2]).toMatchObject({ number: 3, inferredJoker: true });
   });
 });
 
