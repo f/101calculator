@@ -4,7 +4,7 @@ Camera-first, mobile web calculator for 101 Okey. It finds light-colored tiles i
 
 ## Live site
 
-Every push to `main` is tested, built, and deployed through GitHub Actions at [f.github.io/101calculator](https://f.github.io/101calculator/).
+Every push to `main` is tested, built, and deployed through GitHub Actions at [blog.fka.dev/101calculator](https://blog.fka.dev/101calculator/).
 
 ## Run locally
 
