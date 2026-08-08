@@ -58,6 +58,7 @@ export function useCamera(disabled = false): UseCameraResult {
       }
       setState('live');
     } catch (cameraError) {
+      if (requestId !== requestIdRef.current) return;
       const name = cameraError instanceof DOMException ? cameraError.name : '';
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
         setState('denied');
@@ -80,7 +81,7 @@ export function useCamera(disabled = false): UseCameraResult {
   useEffect(() => {
     const handleVisibility = () => {
       if (document.hidden) stop();
-      else if (!disabled && state === 'live') void start();
+      else if (!disabled && (state === 'live' || state === 'requesting')) void start();
     };
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
